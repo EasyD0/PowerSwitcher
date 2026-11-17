@@ -1,0 +1,77 @@
+name: Release
+
+# Push a version tag (e.g. v1.0.0) to build and publish a release.
+# workflow_dispatch builds the same artifact but only uploads it as a
+# workflow artifact, without creating a release.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (MSVC x64)
+        # The Visual Studio generator is used on purpose: CMake 4.x + MSVC
+        # generates a broken RC rule for Ninja (see README).
+        run: cmake -S . -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $exe = "build/bin/PowerSwitcher.exe"
+          if (-not (Test-Path $exe)) {
+            throw "Build output not found: $exe"
+          }
+
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item $exe dist/
+          Copy-Item LICENCE dist/
+          Copy-Item README.md dist/
+
+          $name = "PowerSwitcher-${{ github.ref_name }}-win64.zip"
+          Compress-Archive -Path dist/* -DestinationPath $name
+          "ASSET=$name" >> $env:GITHUB_ENV
+
+      - name: Upload build artifact (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PowerSwitcher-win64
+          path: ${{ env.ASSET }}
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PowerSwitcher ${{ github.ref_name }}
+          files: ${{ env.ASSET }}
+          generate_release_notes: true
+          body: |
+            Native Win32 build of PowerSwitcher. No .NET runtime required.
+
+            **Requirements:** Windows 10/11 x64
+
+            **Package contents:** `PowerSwitcher.exe`, `LICENCE`, `README.md`
+
+            The executable is not code-signed, so Windows SmartScreen may show
+            an "Unknown publisher" prompt on first launch.
+
+            Settings are stored in `%APPDATA%\PowerSwitcher\config.ini`.
+
+            ---
+
+            MIT License, Copyright (c) 2016 Petr Houska.
+            Forked and rewritten from [Petrroll/PowerSwitcher](https://github.com/Petrroll/PowerSwitcher).
+            See `LICENCE` for the full text.
