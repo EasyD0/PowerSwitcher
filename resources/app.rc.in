@@ -1,0 +1,6 @@
+#include <windows.h>
+
+#define IDI_APPICON 101
+@APP_ICON_LINE@
+
+1 RT_MANIFEST "app.manifest"
